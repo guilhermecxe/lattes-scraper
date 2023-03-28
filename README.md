@@ -2,8 +2,21 @@
 
 A package to scrape data from Plataforma Lattes.
 
-Example:
+## Requirements:
 
+- `Python==3.9` or `Python==3.10`
+- `selenium==4.8.3`
+
+## Install
+
+Run:
+```bash
+$ pip install -e .
+```
+
+## Example
+
+Run:
 ```py
 >>> from lattes_scraper import LattesScraper
 >>> with LattesScraper(teardown=True, headless=False) as scraper:
@@ -11,7 +24,7 @@ Example:
         text = 'visao computacional'
         areas = ('Ciências da Saúde', 'Odontologia', 'Ortodontia')
         scraper.search(mode, text, areas)
-        
+
 Fernando César Torres
 Thyciana Rodrigues Ribeiro
 Viviane Veroni Degan
