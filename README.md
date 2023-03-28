@@ -9,6 +9,12 @@ A package to scrape data from Plataforma Lattes.
 
 ## Install
 
+Clone:
+```bash
+$ git clone https://github.com/guilhermecxe/lattes-scraper.git
+$ cd lattes-scraper
+```
+
 Run:
 ```bash
 $ pip install -e .
