@@ -4,8 +4,10 @@ from selenium import webdriver
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import NoSuchElementException
 from shutil import which
 import os
+import time
 
 from .expected_conditions import abreCV, tabs
 
@@ -34,11 +36,12 @@ class LattesScraper(webdriver.Firefox):
         if self.teardown:
             self.quit()
 
-    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None):
+    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None, max_results=10):
         # Obtendo a página
         self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
 
         # Aplicando os filtros
+        text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
         if mode == 'Assunto':
             self.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
         if not foreigner:
@@ -47,52 +50,67 @@ class LattesScraper(webdriver.Firefox):
             self._set_atuacao_profissional(*areas)
         if professional_activity_uf:
             self.find_element(By.ID, 'filtro8').click()
-            self.find_element(By.XPATH, f"//option[contains(text()='{professional_activity_uf}')]")[-1].click()
-
-        # Escrevendo o texto de busca
-        text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
-        text_input.send_keys(text)
+            self.find_elements(By.XPATH, f"//option[contains(text(), '{professional_activity_uf}')]")[-1].click()
+            self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
+        if text:
+            text_input.send_keys(text)
 
         # Buscando
         text_input.send_keys(Keys.ENTER)
 
         # Obtendo os resultados
-        return self._get_results()
+        return self._get_results(max_results=max_results)
 
-    def _get_results(self):
+    def _get_results(self, max_results=10):
         results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
         results_pages_source = []
+        next_page = True
+        missing_results = max_results
 
-        for i in range(results_count):
-            results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
-            result = results[i]
+        while next_page and len(results_pages_source) < max_results:
+            missing_results = missing_results - len(results_pages_source)
+            for i in range(min(results_count, missing_results)):
+                results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
+                result = results[i]
 
-            # Abre modal do resultado e clica para abrir currículo
-            result.find_element(By.TAG_NAME, 'a').click()
-            WebDriverWait(self, 10).until(abreCV())
+                # Abre modal do resultado e clica para abrir currículo
+                result.find_element(By.TAG_NAME, 'a').click()
+                WebDriverWait(self, 10).until(abreCV())
 
-            # Muda para a nova aba
-            WebDriverWait(self, 50).until(tabs(more_than=1))
-            self.switch_to.window(self.window_handles[1])
+                # Muda para a nova aba
+                WebDriverWait(self, 50).until(tabs(more_than=1))
+                self.switch_to.window(self.window_handles[1])
 
-            # Exibe o nome do pesquisador
-            reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
-            print(reseacher_name)
+                # Exibe o nome do pesquisador
+                reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
+                print(reseacher_name)
 
-            results_pages_source.append(self.page_source)
+                results_pages_source.append(self.page_source)
 
-            # Fecha aba e volta para os resultados
-            self.close()
-            WebDriverWait(self, timeout=50).until(tabs(equals=1))
-            self.switch_to.window(self.window_handles[0])
-            self.execute_script("""document.querySelector("a.bt-fechar").click()""")
+                # Fecha aba e volta para os resultados
+                self.close()
+                WebDriverWait(self, timeout=50).until(tabs(equals=1))
+                self.switch_to.window(self.window_handles[0])
+                self.execute_script("""document.querySelector("a.bt-fechar").click()""")
 
+            try:
+                next_page_button = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
+                next_page_button.click()
+                next_page = True
+            except NoSuchElementException:
+                next_page = False
+            
         return results_pages_source
 
     def _set_atuacao_profissional(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
-        self.find_element(By.XPATH, f"//option[text()='{grande_area}']").click()
-        if area: self.find_element(By.XPATH, f"//option[text()='{area}']").click()
-        if subarea: self.find_element(By.XPATH, f"//option[text()='{subarea}']").click()
-        if especialidade: self.find_element(By.XPATH, f"//option[text()='{especialidade}']").click()
+        for i in range(3):
+            try:
+                self.find_element(By.XPATH, f"//option[text()='{grande_area}']").click()
+                if area: self.find_element(By.XPATH, f"//option[text()='{area}']").click()
+                if subarea: self.find_element(By.XPATH, f"//option[text()='{subarea}']").click()
+                if especialidade: self.find_element(By.XPATH, f"//option[text()='{especialidade}']").click()
+                break
+            except NoSuchElementException:
+                time.sleep(2)
         self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[4].click()
