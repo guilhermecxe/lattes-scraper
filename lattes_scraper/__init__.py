@@ -1,0 +1,1 @@
+from .lattes_scraper import LattesScraper
