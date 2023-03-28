@@ -4,4 +4,7 @@ with LattesScraper(teardown=True, headless=False) as scraper:
     mode = 'Assunto'
     text = 'visao computacional'
     areas = ('Ciências da Saúde', 'Odontologia', 'Ortodontia')
-    scraper.search(mode, text, areas)
+    results = scraper.search(mode, text, areas)
+
+for r in results:
+    pass

@@ -48,10 +48,11 @@ class LattesScraper(webdriver.Firefox):
         text_input.send_keys(Keys.ENTER)
 
         # Obtendo os resultados
-        self._get_results()
+        return self._get_results()
 
     def _get_results(self):
         results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
+        results_pages_source = []
 
         for i in range(results_count):
             results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
@@ -69,11 +70,15 @@ class LattesScraper(webdriver.Firefox):
             reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
             print(reseacher_name)
 
+            results_pages_source.append(self.page_source)
+
             # Fecha aba e volta para os resultados
             self.close()
             WebDriverWait(self, timeout=50).until(tabs(equals=1))
             self.switch_to.window(self.window_handles[0])
             self.execute_script("""document.querySelector("a.bt-fechar").click()""")
+
+        return results_pages_source
 
     def _set_atuacao_profissional(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
