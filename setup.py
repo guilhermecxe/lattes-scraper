@@ -9,5 +9,5 @@ setup(
     install_requires=[
         'selenium==4.8.3',
     ],
-    python_requires='>=3.10',
+    python_requires='>=3.9',
 )
