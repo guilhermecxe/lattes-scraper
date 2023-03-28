@@ -5,6 +5,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from shutil import which
+import os
 
 from .expected_conditions import abreCV, tabs
 
@@ -18,7 +19,10 @@ class LattesScraper(webdriver.Firefox):
         options.headless = headless
 
         # Obtendo a localização do geckodriver pelo PATH
-        service = Service(which('geckodriver'))
+        geckodriver_path = which('geckodriver')
+        if not geckodriver_path:
+            geckodriver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'geckodriver.exe')
+        service = Service(geckodriver_path)
 
         # Iniciando o driver
         super().__init__(options=options, service=service)
