@@ -34,15 +34,20 @@ class LattesScraper(webdriver.Firefox):
         if self.teardown:
             self.quit()
 
-    def search(self, mode, text, areas=None):
+    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None):
         # Obtendo a página
         self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
 
         # Aplicando os filtros
         if mode == 'Assunto':
             self.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
+        if not foreigner:
+            self.find_element(By.ID, 'buscarEstrangeiros').click()
         if areas:
             self._set_atuacao_profissional(*areas)
+        if professional_activity_uf:
+            self.find_element(By.ID, 'filtro8').click()
+            self.find_element(By.XPATH, f"//option[contains(text()='{professional_activity_uf}')]")[-1].click()
 
         # Escrevendo o texto de busca
         text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")

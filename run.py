@@ -1,10 +1,8 @@
 from lattes_scraper import LattesScraper
 
 with LattesScraper(teardown=True, headless=False) as scraper:
-    mode = 'Assunto'
-    text = 'visao computacional'
-    areas = ('Ciências da Saúde', 'Odontologia', 'Ortodontia')
-    results = scraper.search(mode, text, areas)
-
-for r in results:
-    pass
+    mode = 'Nome'
+    text = ''
+    areas = ('Ciências Agrárias', 'Zootecnia', 'Genética e Melhoramento dos Animais Domésticos')
+    UF = 'Goiás'
+    results = scraper.search(mode, text, areas, professional_activity_uf=UF)
