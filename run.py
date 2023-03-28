@@ -6,3 +6,4 @@ with LattesScraper(teardown=True, headless=False) as scraper:
     areas = ('Ciências Agrárias', 'Zootecnia', 'Genética e Melhoramento dos Animais Domésticos')
     UF = 'Goiás'
     results = scraper.search(mode, text, areas, professional_activity_uf=UF, max_results=15)
+    scraper.save_results('data/')

@@ -32,6 +32,8 @@ class LattesScraper(webdriver.Firefox):
         # Setando 10 segundos de espera padrão
         self.implicitly_wait(10)
 
+        self.results = None
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.teardown:
             self.quit()
@@ -63,12 +65,12 @@ class LattesScraper(webdriver.Firefox):
 
     def _get_results(self, max_results=10):
         results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
-        results_pages_source = []
+        results_pages_source = {}
         next_page = True
         missing_results = max_results
 
-        while next_page and len(results_pages_source) < max_results:
-            missing_results = missing_results - len(results_pages_source)
+        while next_page and len(results_pages_source.keys()) < max_results:
+            missing_results = missing_results - len(results_pages_source.keys())
             for i in range(min(results_count, missing_results)):
                 results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
                 result = results[i]
@@ -82,10 +84,12 @@ class LattesScraper(webdriver.Firefox):
                 self.switch_to.window(self.window_handles[1])
 
                 # Exibe o nome do pesquisador
+                time.sleep(2)
                 reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
-                print(reseacher_name)
+                lattes_url = self.find_element(By.XPATH, "//ul[@class='informacoes-autor']/li").text.split('CV: ')[-1]
+                lattes_id = lattes_url.split('/')[-1]
 
-                results_pages_source.append(self.page_source)
+                results_pages_source[lattes_id] = self.page_source
 
                 # Fecha aba e volta para os resultados
                 self.close()
@@ -100,6 +104,7 @@ class LattesScraper(webdriver.Firefox):
             except NoSuchElementException:
                 next_page = False
             
+        self.results = results_pages_source
         return results_pages_source
 
     def _set_atuacao_profissional(self, grande_area, area=None, subarea=None, especialidade=None):
@@ -114,3 +119,9 @@ class LattesScraper(webdriver.Firefox):
             except NoSuchElementException:
                 time.sleep(2)
         self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[4].click()
+
+    def save_results(self, folder_path, results=None):
+        results = results if results else self.results
+        for k, v in results.items():
+            with open(os.path.join(folder_path, f'{k}.html'), 'w', encoding='utf-8') as f:
+                f.write(v)
