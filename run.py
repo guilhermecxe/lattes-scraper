@@ -1,6 +1,6 @@
 from lattes_scraper import LattesScraper
 
-with LattesScraper(teardown=False, headless=False) as scraper:
+with LattesScraper(teardown=True, headless=False) as scraper:
     mode = 'Assunto'
     text = 'visao computacional'
     areas = ('Ciências da Saúde', 'Odontologia', 'Ortodontia')
