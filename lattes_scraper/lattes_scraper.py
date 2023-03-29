@@ -6,15 +6,17 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 from shutil import which
+from tqdm import tqdm
 import os
 import time
 
 from .expected_conditions import abreCV, tabs
 
 class LattesScraper(webdriver.Firefox):
-    def __init__(self, teardown=True, headless=True):
+    def __init__(self, teardown=True, headless=True, show_progress=False):
         # Se o navegador deve ser fechado após a execução
         self.teardown = teardown
+        self.show_progress = show_progress
 
         # Se o navegador deve ser exibido
         options = Options()
@@ -72,6 +74,8 @@ class LattesScraper(webdriver.Firefox):
         self.results_pages_source = {}
         next_page = True
         missing_results = max_results
+        results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
+        if self.show_progress: progress_bar = tqdm(total=min(max_results, results_found))
 
         while next_page and len(self.results_pages_source.keys()) < max_results:
             results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
@@ -95,6 +99,9 @@ class LattesScraper(webdriver.Firefox):
                 lattes_id = lattes_url.split('/')[-1]
 
                 self.results_pages_source[lattes_id] = self.page_source
+                if self.show_progress:
+                    progress_bar.update(1)
+                    progress_bar.refresh()
 
                 # Fecha aba e volta para os resultados
                 self.close()
