@@ -76,7 +76,7 @@ class LattesScraper(webdriver.Firefox):
             if self.backup_id:
                 Backup(self.results_pages_source, id=self.backup_id)
                 print(f'A backup with id {self.backup_id} was updated.')
-            else:
+            elif self.results_pages_source:
                 print(f'A backup was created with id {Backup(self.results_pages_source, name=self.backup_name).id}.')
 
     def _get_results(self, max_results=10):
