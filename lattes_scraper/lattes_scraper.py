@@ -11,12 +11,14 @@ import os
 import time
 
 from .expected_conditions import abreCV, tabs
+from .backup import Backup
 
 class LattesScraper(webdriver.Firefox):
-    def __init__(self, teardown=True, headless=True, show_progress=False):
+    def __init__(self, teardown=True, headless=True, show_progress=False, backup=None):
         # Se o navegador deve ser fechado após a execução
         self.teardown = teardown
         self.show_progress = show_progress
+        self.backup = backup
 
         # Se o navegador deve ser exibido
         options = Options()
@@ -69,9 +71,15 @@ class LattesScraper(webdriver.Firefox):
             print(f'An error occurred while getting the results. {len(self.results_pages_source)} results obtained.')
             print('Use .save_results method to save them.')
             raise
+        finally:
+            if self.backup:
+                Backup(self.results_pages_source, id=self.backup)
+                print(f'A backup with id {self.backup} was updated.')
+            else:
+                print(f'A backup was created with id {Backup(self.results_pages_source).id}.')
 
     def _get_results(self, max_results=10):
-        self.results_pages_source = {}
+        self.results_pages_source = Backup(id=self.backup).results_pages_source if self.backup else {}
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
