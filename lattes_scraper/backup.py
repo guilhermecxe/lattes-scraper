@@ -4,15 +4,16 @@ import pickle
 BACKUP_PATH = '.backup'
 
 class Backup:
-    def __init__(self, results_pages_source=None, id=None):
-        if results_pages_source and id:
+    def __init__(self, results_pages_source=None, id=None, name=None):
+        if results_pages_source and id: # updating a backup
             self.results_pages_source = results_pages_source
             self.id = id
             self.__save()
-        elif id:
+        elif id: # reading a backup
             self.id = id
             self.__read()
-        elif results_pages_source:
+        elif results_pages_source: # creating a backup
+            self.name = name
             self.results_pages_source = results_pages_source
             if not os.path.exists(BACKUP_PATH):
                 os.makedirs(BACKUP_PATH)
@@ -28,4 +29,7 @@ class Backup:
 
     def __read(self):
         with open(os.path.join(BACKUP_PATH, f'{self.id}.pickle'), 'rb') as f:
-            self.results_pages_source = pickle.load(f).results_pages_source
+            previous_backup = pickle.load(f)
+        self.results_pages_source = previous_backup.results_pages_source
+        self.name = previous_backup.name
+        

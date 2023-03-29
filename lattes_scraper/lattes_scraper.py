@@ -14,11 +14,12 @@ from .expected_conditions import abreCV, tabs
 from .backup import Backup
 
 class LattesScraper(webdriver.Firefox):
-    def __init__(self, teardown=True, headless=True, show_progress=False, backup=None):
+    def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None):
         # Se o navegador deve ser fechado após a execução
         self.teardown = teardown
         self.show_progress = show_progress
-        self.backup = backup
+        self.backup_id = backup_id
+        self.backup_name = backup_name
 
         # Se o navegador deve ser exibido
         options = Options()
@@ -72,14 +73,14 @@ class LattesScraper(webdriver.Firefox):
             print('Use .save_results method to save them.')
             raise
         finally:
-            if self.backup:
-                Backup(self.results_pages_source, id=self.backup)
-                print(f'A backup with id {self.backup} was updated.')
+            if self.backup_id:
+                Backup(self.results_pages_source, id=self.backup_id)
+                print(f'A backup with id {self.backup_id} was updated.')
             else:
-                print(f'A backup was created with id {Backup(self.results_pages_source).id}.')
+                print(f'A backup was created with id {Backup(self.results_pages_source, name=self.backup_name).id}.')
 
     def _get_results(self, max_results=10):
-        self.results_pages_source = Backup(id=self.backup).results_pages_source if self.backup else {}
+        self.results_pages_source = Backup(id=self.backup_id).results_pages_source if self.backup_id else {}
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
