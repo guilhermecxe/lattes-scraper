@@ -43,7 +43,8 @@ class LattesScraper(webdriver.Firefox):
         if self.teardown:
             self.quit()
 
-    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None, max_results=10):
+    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None, max_results=10,
+               last_update=48):
         # Obtendo a página
         self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
 
@@ -61,6 +62,8 @@ class LattesScraper(webdriver.Firefox):
             self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
         if text:
             text_input.send_keys(text)
+
+        self.__add_preferences(last_update)
 
         # Buscando
         text_input.send_keys(Keys.ENTER)
@@ -147,3 +150,9 @@ class LattesScraper(webdriver.Firefox):
         for k, v in results.items():
             with open(os.path.join(folder_path, f'{k}.html'), 'w', encoding='utf-8') as f:
                 f.write(v)
+
+    def __add_preferences(self, last_update=48):
+        self.find_element(By.XPATH, "//a[text()=' Preferências ']").click()
+        if last_update != 48:
+            self.find_element(By.ID, 'somenteAtualizados').clear()
+            self.find_element(By.ID, 'somenteAtualizados').send_keys(last_update)
