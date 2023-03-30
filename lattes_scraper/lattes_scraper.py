@@ -5,14 +5,13 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
-from backup import Backup
 from shutil import which
 from tqdm import tqdm
 import os
 import time
 
 from .expected_conditions import abreCV, tabs
-# from .backup import Backup
+from .backup import Backup
 
 class LattesScraper(webdriver.Firefox):
     def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None):
