@@ -101,8 +101,10 @@ class LattesScraper(webdriver.Firefox):
                 WebDriverWait(self, 50).until(tabs(more_than=1))
                 self.switch_to.window(self.window_handles[1])
 
+                # Sinal de que o arquivo html carregou até o final
+                self.find_element(By.XPATH, "//div[@class='rodape-cv']")
+
                 # Exibe o nome do pesquisador
-                time.sleep(2)
                 reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
                 lattes_url = self.find_element(By.XPATH, "//ul[@class='informacoes-autor']/li").text.split('CV: ')[-1]
                 lattes_id = lattes_url.split('/')[-1]

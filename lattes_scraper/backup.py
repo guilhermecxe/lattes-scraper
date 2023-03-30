@@ -31,5 +31,5 @@ class Backup:
         with open(os.path.join(BACKUP_PATH, f'{self.id}.pickle'), 'rb') as f:
             previous_backup = pickle.load(f)
         self.results_pages_source = previous_backup.results_pages_source
-        self.name = previous_backup.name
+        self.name = previous_backup.name if 'name' in dir(previous_backup) else None
         
