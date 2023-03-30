@@ -5,13 +5,14 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
+from backup import Backup
 from shutil import which
 from tqdm import tqdm
 import os
 import time
 
 from .expected_conditions import abreCV, tabs
-from .backup import Backup
+# from .backup import Backup
 
 class LattesScraper(webdriver.Firefox):
     def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None):
@@ -77,13 +78,16 @@ class LattesScraper(webdriver.Firefox):
             raise
         finally:
             if self.backup_id:
-                Backup(self.results_pages_source, id=self.backup_id)
+                # Backup(self.results_pages_source, id=self.backup_id)
+                Backup('update', self.results_pages_source, self.backup_id, self.backup_name)
                 print(f'A backup with id {self.backup_id} was updated.')
             elif self.results_pages_source:
-                print(f'A backup was created with id {Backup(self.results_pages_source, name=self.backup_name).id}.')
+                id = Backup('create', self.results_pages_source, name=self.backup_name).id
+                print(f'A backup was created with id {id}.')
 
     def _get_results(self, max_results=10):
-        self.results_pages_source = Backup(id=self.backup_id).results_pages_source if self.backup_id else {}
+        # self.results_pages_source = Backup(id=self.backup_id).results_pages_source if self.backup_id else {}
+        self.results_pages_source = Backup('read', id=self.backup_id).item if self.backup_id else {}
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
