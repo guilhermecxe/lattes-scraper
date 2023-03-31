@@ -4,7 +4,7 @@ from selenium import webdriver
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, WebDriverException
 from shutil import which
 from tqdm import tqdm
 import os
@@ -46,7 +46,14 @@ class LattesScraper(webdriver.Firefox):
     def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None, max_results=10,
                last_update=48):
         # Obtendo a página
-        self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
+        for i in range(3):
+            try:
+                self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
+            except WebDriverException:
+                time.sleep(5)
+                if i == 2:
+                    print('Error trying to access website. Check if it is working.')
+                    raise
 
         # Aplicando os filtros
         text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
@@ -85,7 +92,6 @@ class LattesScraper(webdriver.Firefox):
                 print(f'A backup was created with id {id}.')
 
     def _get_results(self, max_results=10):
-        # self.results_pages_source = Backup(id=self.backup_id).results_pages_source if self.backup_id else {}
         self.results_pages_source = Backup('read', id=self.backup_id).item if self.backup_id else {}
         next_page = True
         missing_results = max_results
