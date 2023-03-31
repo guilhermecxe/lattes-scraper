@@ -15,35 +15,33 @@ from .expected_conditions import abreCV, tabs
 from .backup import Backup, save_backup, read_backup
 
 class LattesScraper(webdriver.Firefox):
-    def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None):
+    def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None,
+                 sleep=0):
         self.teardown = teardown
         self.show_progress = show_progress
-        self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
         self.current_result = None
+        self.sleep = sleep
+        self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
 
-        # Se o navegador deve ser exibido
         options = Options()
+        service = Service(self.__get_geckodriver_path())
         options.headless = headless
 
-        # Obtendo a localização do geckodriver pelo PATH
-        geckodriver_path = which('geckodriver')
-        if not geckodriver_path:
-            geckodriver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'geckodriver.exe')
-        service = Service(geckodriver_path)
-
-        # Iniciando o driver
         super().__init__(options=options, service=service)
 
-        # Setando 10 segundos de espera padrão
         self.implicitly_wait(15)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.teardown:
             self.quit()
 
-    def search(self, mode, text, areas=None, foreigner=False, professional_activity_uf=None, max_results=10,
-               last_update=48):
-        # Obtendo a página
+    def __get_geckodriver_path(self):
+        geckodriver_path = which('geckodriver')
+        if not geckodriver_path:
+            geckodriver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'geckodriver.exe')
+        return geckodriver_path
+
+    def __get_search_page(self):
         for i in range(3):
             try:
                 self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
@@ -53,29 +51,16 @@ class LattesScraper(webdriver.Firefox):
                     print('Error trying to access website. Check if it is working.')
                     raise
 
-        # Aplicando os filtros
-        text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
-        if mode == 'Assunto':
-            self.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
-        if not foreigner:
-            self.find_element(By.ID, 'buscarEstrangeiros').click()
-        if areas:
-            self._set_atuacao_profissional(*areas)
-        if professional_activity_uf:
-            self.find_element(By.ID, 'filtro8').click()
-            self.find_elements(By.XPATH, f"//option[contains(text(), '{professional_activity_uf}')]")[-1].click()
-            self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
-        if text:
-            text_input.send_keys(text)
+    def search(self, max_results=10, filters={}, preferences={}):
+        self.__get_search_page()
+        self.__apply_filters(filters)
+        self.__apply_preferences(preferences)
 
-        self.__add_preferences(last_update)
-
-        # Buscando
-        text_input.send_keys(Keys.ENTER)
+        self.find_element(By.ID, 'botaoBuscaFiltros').click()
 
         # Obtendo os resultados
         try:
-            self._get_results(max_results=max_results)
+            self.__get_results(max_results=max_results)
             return self.backup.item
         except:
             print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
@@ -93,48 +78,64 @@ class LattesScraper(webdriver.Firefox):
                 id = save_backup(self.backup)
                 print(f'A backup was created with id {id}.')
 
-    def _get_results(self, max_results=10):
+    def __wait_load_curriculum(self):
+        try:
+            self.find_element(By.XPATH, "//div[@class='rodape-cv']")
+        except NoSuchElementException:
+            self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self.find_element(By.XPATH, "//div[@class='rodape-cv']")
+
+    def __results_next_page(self):
+        try:
+            next_page_button = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
+            next_page_button.click()
+            return True
+        except NoSuchElementException:
+            return False
+
+    def __get_curriculum(self, result):
+        result.find_element(By.TAG_NAME, 'a').click()
+        WebDriverWait(self, 10).until(abreCV())
+
+        WebDriverWait(self, 50).until(tabs(more_than=1))
+        self.switch_to.window(self.window_handles[1])
+
+        self.__wait_load_curriculum()
+
+    def __get_results(self, max_results=10):
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
+        stored_results = len(self.backup.item)
+
         if self.show_progress: progress_bar = tqdm(total=min(max_results, results_found))
 
-        while next_page and len(self.backup.item) < max_results:
-            results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
-            missing_results = max_results - len(self.backup.item)
-            for i in range(min(results_count, missing_results)):
-                results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
-                result = results[i]
+        results_count = lambda: len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
+        results = lambda: self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
+        hash = lambda text: hashlib.md5(text.encode()).hexdigest()
+
+        while next_page and stored_results < max_results:
+            missing_results = max_results - stored_results
+            for i in range(min(results_count(), missing_results)):
+                result = results()[i]
                 result_infos = result.text.strip()
                 self.current_result = result_infos
-                hash = hashlib.md5(result_infos.encode()).hexdigest()
-                if self.backup.item.get(hash):
+                hash_code = hash(result_infos)
+
+                if self.backup.item.get(hash_code):
                     if self.show_progress:
                         progress_bar.update(1)
                         progress_bar.refresh()
                     continue
 
-                # Abre modal do resultado e clica para abrir currículo
-                result.find_element(By.TAG_NAME, 'a').click()
-                WebDriverWait(self, 10).until(abreCV())
+                self.__get_curriculum(result)
 
-                # Muda para a nova aba
-                WebDriverWait(self, 50).until(tabs(more_than=1))
-                self.switch_to.window(self.window_handles[1])
-
-                # Sinal de que o arquivo html carregou até o final
-                try:
-                    self.find_element(By.XPATH, "//div[@class='rodape-cv']")
-                except NoSuchElementException:
-                    self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    self.find_element(By.XPATH, "//div[@class='rodape-cv']")
-
-                # Exibe o nome do pesquisador
-                reseacher_name = self.find_element(By.XPATH, "//h2[@class = 'nome']").text
                 lattes_url = self.find_element(By.XPATH, "//ul[@class='informacoes-autor']/li").text.split('CV: ')[-1]
                 lattes_id = lattes_url.split('/')[-1]
 
-                self.backup.item[hash] = self.page_source
+                self.backup.item[hash_code] = self.page_source
+                stored_results += 1
+
                 if self.show_progress:
                     progress_bar.update(1)
                     progress_bar.refresh()
@@ -145,16 +146,11 @@ class LattesScraper(webdriver.Firefox):
                 self.switch_to.window(self.window_handles[0])
                 self.execute_script("""document.querySelector("a.bt-fechar").click()""")
 
+                time.sleep(self.sleep)
                 self.current_result = None
+            next_page = self.__results_next_page()
 
-            try:
-                next_page_button = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
-                next_page_button.click()
-                next_page = True
-            except NoSuchElementException:
-                next_page = False
-
-    def _set_atuacao_profissional(self, grande_area, area=None, subarea=None, especialidade=None):
+    def __set_professional_activity_areas(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
         for i in range(3):
             try:
@@ -173,8 +169,29 @@ class LattesScraper(webdriver.Firefox):
             with open(os.path.join(folder_path, f'{k}.html'), 'w', encoding='utf-8') as f:
                 f.write(v)
 
-    def __add_preferences(self, last_update=48):
+    def __apply_preferences(self, preferences):
+        last_update = preferences.get('last_update', 48)
         self.find_element(By.XPATH, "//a[text()=' Preferências ']").click()
+
         if last_update != 48:
             self.find_element(By.ID, 'somenteAtualizados').clear()
             self.find_element(By.ID, 'somenteAtualizados').send_keys(last_update)
+
+    def __apply_filters(self, filters):
+        areas = filters.get('areas')
+        professional_activity_uf = filters.get('professional_activity_uf')
+        text = filters.get('text')
+        text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
+
+        if filters.get('mode') == 'Assunto':
+            self.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
+        if not filters.get('foreigner'):
+            self.find_element(By.ID, 'buscarEstrangeiros').click()
+        if areas:
+            self.__set_professional_activity_areas(*areas)
+        if professional_activity_uf:
+            self.find_element(By.ID, 'filtro8').click()
+            self.find_elements(By.XPATH, f"//option[contains(text(), '{professional_activity_uf}')]")[-1].click()
+            self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
+        if text:
+            text_input.send_keys(text)
