@@ -11,15 +11,14 @@ import os
 import time
 
 from .expected_conditions import abreCV, tabs
-from .backup import Backup
+from .backup import Backup, save_backup, read_backup
 
 class LattesScraper(webdriver.Firefox):
     def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None):
         # Se o navegador deve ser fechado após a execução
         self.teardown = teardown
         self.show_progress = show_progress
-        self.backup_id = backup_id
-        self.backup_name = backup_name
+        self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
 
         # Se o navegador deve ser exibido
         options = Options()
@@ -77,30 +76,30 @@ class LattesScraper(webdriver.Firefox):
 
         # Obtendo os resultados
         try:
-            return self._get_results(max_results=max_results)
+            self._get_results(max_results=max_results)
+            return self.backup.item
         except:
-            print(f'An error occurred while getting the results. {len(self.results_pages_source)} results obtained.')
+            print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
             print('Use .save_results method to save them.')
             raise
         finally:
-            if self.backup_id:
-                # Backup(self.results_pages_source, id=self.backup_id)
-                Backup('update', self.results_pages_source, self.backup_id, self.backup_name)
-                print(f'A backup with id {self.backup_id} was updated.')
-            elif self.results_pages_source:
-                id = Backup('create', self.results_pages_source, name=self.backup_name).id
+            if self.backup.id:
+                id = save_backup(self.backup)
+                print(f'A backup with id {id} was updated.')
+            elif self.backup.item:
+                id = save_backup(self.backup)
                 print(f'A backup was created with id {id}.')
 
     def _get_results(self, max_results=10):
-        self.results_pages_source = Backup('read', id=self.backup_id).item if self.backup_id else {}
+        # self.results_pages_source = Backup('read', id=self.backup_id).item if self.backup_id else {}
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
         if self.show_progress: progress_bar = tqdm(total=min(max_results, results_found))
 
-        while next_page and len(self.results_pages_source.keys()) < max_results:
+        while next_page and len(self.backup.item) < max_results:
             results_count = len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
-            missing_results = max_results - len(self.results_pages_source.keys())
+            missing_results = max_results - len(self.backup.item)
             for i in range(min(results_count, missing_results)):
                 results = self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
                 result = results[i]
@@ -121,7 +120,7 @@ class LattesScraper(webdriver.Firefox):
                 lattes_url = self.find_element(By.XPATH, "//ul[@class='informacoes-autor']/li").text.split('CV: ')[-1]
                 lattes_id = lattes_url.split('/')[-1]
 
-                self.results_pages_source[lattes_id] = self.page_source
+                self.backup.item[lattes_id] = self.page_source
                 if self.show_progress:
                     progress_bar.update(1)
                     progress_bar.refresh()
@@ -139,7 +138,7 @@ class LattesScraper(webdriver.Firefox):
             except NoSuchElementException:
                 next_page = False
             
-        return self.results_pages_source
+        # return self.results_pages_source
 
     def _set_atuacao_profissional(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
@@ -155,7 +154,7 @@ class LattesScraper(webdriver.Firefox):
         self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[4].click()
 
     def save_results(self, folder_path, results=None):
-        results = results if results else self.results_pages_source
+        results = results if results else self.backup.item
         for k, v in results.items():
             with open(os.path.join(folder_path, f'{k}.html'), 'w', encoding='utf-8') as f:
                 f.write(v)
