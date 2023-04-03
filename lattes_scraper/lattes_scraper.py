@@ -52,6 +52,21 @@ class LattesScraper(webdriver.Firefox):
                     print('Error trying to access website. Check if it is working.')
                     raise
 
+    def multiple_searches(self, max_results=10, filters=[], preferences=[]):
+        self.__get_search_page()
+        searches = max(len(filters), len(preferences))
+        for _ in range(searches):
+            if len(filters) < searches:
+                filters.append({})
+            elif len(preferences) < searches:
+                preferences.append({})
+        for filter_, preference in zip(filters, preferences):
+            self.__apply_filters(filter_)
+            self.__apply_preferences(preference)
+            self.find_element(By.ID, 'botaoBuscaFiltros').click()
+            self.__handle_get_results(max_results)
+            self.find_element(By.CSS_SELECTOR, "#tit2_simples .button").click()
+
     def search(self, max_results=10, filters={}, preferences={}):
         self.__get_search_page()
         self.__apply_filters(filters)
@@ -60,6 +75,9 @@ class LattesScraper(webdriver.Firefox):
         self.find_element(By.ID, 'botaoBuscaFiltros').click()
 
         # Obtendo os resultados
+        self.__handle_get_results(max_results)
+
+    def __handle_get_results(self, max_results):
         try:
             self.__get_results(max_results=max_results)
             return self.backup.item
@@ -167,7 +185,7 @@ class LattesScraper(webdriver.Firefox):
                 time.sleep(self.sleep)
                 self.current_result = None
             next_page = self.__results_next_page()
-            current_page = self.__wait_page_change(current_page)
+            if next_page: current_page = self.__wait_page_change(current_page)
 
     def __set_professional_activity_areas(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
