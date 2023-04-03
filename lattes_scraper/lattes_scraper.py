@@ -11,7 +11,7 @@ import os
 import time
 import hashlib
 
-from .expected_conditions import abreCV, tabs
+from .expected_conditions import abreCV, tabs, modal
 from .backup import Backup, save_backup, read_backup
 
 class LattesScraper(webdriver.Firefox):
@@ -20,6 +20,7 @@ class LattesScraper(webdriver.Firefox):
         self.teardown = teardown
         self.show_progress = show_progress
         self.current_result = None
+        self.previous_page_number = 0
         self.sleep = sleep
         self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
 
@@ -63,12 +64,15 @@ class LattesScraper(webdriver.Firefox):
             self.__get_results(max_results=max_results)
             return self.backup.item
         except:
-            print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
-            print('Use .save_results method to save them.')
-            if self.current_result:
-                print('Error while on result defined as:\n---')
-                print(self.current_result)
-                print('---')
+            if self.current_result == 'Stale file handle':
+                print('Error. The plataform is not working well. Try again after some time.')
+            else:
+                print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
+                print('Use .save_results method to save them.')
+                if self.current_result:
+                    print('Error while on result defined as:\n---')
+                    print(self.current_result)
+                    print('---')
             raise
         finally:
             if self.backup.id:
@@ -94,19 +98,32 @@ class LattesScraper(webdriver.Firefox):
             return False
 
     def __get_curriculum(self, result):
-        result.find_element(By.TAG_NAME, 'a').click()
+        WebDriverWait(self, 10).until(modal(result))
         WebDriverWait(self, 10).until(abreCV())
-
         WebDriverWait(self, 50).until(tabs(more_than=1))
         self.switch_to.window(self.window_handles[1])
 
         self.__wait_load_curriculum()
+
+    def __wait_page_change(self, previous_page_number):
+        for _ in range(3):
+            current_page = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a").text
+            if current_page == 'próximo':
+                return previous_page_number + 1
+            else:
+                current_page_number = int(current_page)
+                if current_page_number == previous_page_number:
+                    time.sleep(self.sleep)
+                else:
+                    return current_page_number
+        raise TimeoutError
 
     def __get_results(self, max_results=10):
         next_page = True
         missing_results = max_results
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
         stored_results = len(self.backup.item)
+        current_page = 0
 
         if self.show_progress: progress_bar = tqdm(total=min(max_results, results_found))
 
@@ -116,6 +133,7 @@ class LattesScraper(webdriver.Firefox):
 
         while next_page and stored_results < max_results:
             missing_results = max_results - stored_results
+
             for i in range(min(results_count(), missing_results)):
                 result = results()[i]
                 result_infos = result.text.strip()
@@ -149,6 +167,7 @@ class LattesScraper(webdriver.Firefox):
                 time.sleep(self.sleep)
                 self.current_result = None
             next_page = self.__results_next_page()
+            current_page = self.__wait_page_change(current_page)
 
     def __set_professional_activity_areas(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()

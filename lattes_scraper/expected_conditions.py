@@ -1,4 +1,19 @@
 from selenium.common.exceptions import JavascriptException
+from selenium.webdriver.common.by import By
+
+class modal(object):
+    def __init__(self, html):
+        self.html = html
+
+    def __call__(self, driver):
+        try:
+            self.html.find_element(By.TAG_NAME, 'a').click()
+            modal_style = self.html.find_element(By.XPATH, "//div[@class='moldal moldalHeigh']").get_attribute('style')
+            if 'display: none' in modal_style:
+                raise AssertionError
+            return True
+        except AssertionError:
+            return False
 
 class abreCV(object):
     def __init__(self):
