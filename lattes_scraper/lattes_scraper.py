@@ -13,6 +13,7 @@ import hashlib
 
 from .expected_conditions import abreCV, tabs, modal
 from .backup import Backup, save_backup, read_backup
+from .utils import fill_list
 
 class LattesScraper(webdriver.Firefox):
     def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None,
@@ -47,34 +48,35 @@ class LattesScraper(webdriver.Firefox):
             try:
                 self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
             except WebDriverException:
-                time.sleep(5)
                 if i == 2:
                     print('Error trying to access website. Check if it is working.')
                     raise
+                time.sleep(5)
+
+    def __click_search(self):
+        self.find_element(By.ID, 'botaoBuscaFiltros').click()
+
+    def __click_back_to_search(self):
+        self.find_element(By.CSS_SELECTOR, "#tit2_simples .button").click()
 
     def multiple_searches(self, max_results=10, filters=[], preferences=[]):
-        self.__get_search_page()
         searches = max(len(filters), len(preferences))
-        for _ in range(searches):
-            if len(filters) < searches:
-                filters.append({})
-            elif len(preferences) < searches:
-                preferences.append({})
-        for filter_, preference in zip(filters, preferences):
-            self.__apply_filters(filter_)
-            self.__apply_preferences(preference)
-            self.find_element(By.ID, 'botaoBuscaFiltros').click()
+        fill_list(filters, {}, searches)
+        fill_list(preferences, {}, searches)
+
+        self.__get_search_page()
+        for i in range(searches):
+            self.__apply_filters(filters[i])
+            self.__apply_preferences(preferences[i])
+            self.__click_search()
             self.__handle_get_results(max_results)
-            self.find_element(By.CSS_SELECTOR, "#tit2_simples .button").click()
+            self.__click_back_to_search()
 
     def search(self, max_results=10, filters={}, preferences={}):
         self.__get_search_page()
         self.__apply_filters(filters)
         self.__apply_preferences(preferences)
-
-        self.find_element(By.ID, 'botaoBuscaFiltros').click()
-
-        # Obtendo os resultados
+        self.__click_search()
         self.__handle_get_results(max_results)
 
     def __handle_get_results(self, max_results):
