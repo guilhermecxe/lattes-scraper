@@ -9,11 +9,10 @@ from shutil import which
 from tqdm import tqdm
 import os
 import time
-import hashlib
 
 from .expected_conditions import abreCV, tabs, modal
 from .backup import Backup, save_backup, read_backup
-from .utils import fill_list
+from .utils import fill_list, hash
 
 class LattesScraper(webdriver.Firefox):
     def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None,
@@ -24,6 +23,7 @@ class LattesScraper(webdriver.Firefox):
         self.previous_page_number = 0
         self.sleep = sleep
         self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
+        self.progress_bar = None
 
         options = Options()
         service = Service(self.__get_geckodriver_path())
@@ -42,6 +42,15 @@ class LattesScraper(webdriver.Firefox):
         if not geckodriver_path:
             geckodriver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'geckodriver.exe')
         return geckodriver_path
+    
+    def _set_progress_bar(self, total):
+        if self.show_progress:
+            self._progress_bar = tqdm(total=total)
+
+    def _update_progress_bar(self, by=1):
+        if self.show_progress:
+            self._progress_bar.update(by)
+            self._progress_bar.refresh()
 
     def __get_search_page(self):
         for i in range(3):
@@ -81,17 +90,18 @@ class LattesScraper(webdriver.Firefox):
 
     def __handle_get_results(self, max_results):
         try:
-            self.__get_results(max_results=max_results)
+            self._get_search_results(max_results=max_results)
             return self.backup.item
         except:
-            if self.current_result == 'Stale file handle':
+            current_result_text = self.current_result.text.strip()
+            if current_result_text == 'Stale file handle':
                 print('Error. The plataform is not working well. Try again after some time.')
             else:
                 print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
                 print('Use .save_results method to save them.')
-                if self.current_result:
+                if current_result_text:
                     print('Error while on result defined as:\n---')
-                    print(self.current_result)
+                    print(current_result_text)
                     print('---')
             raise
         finally:
@@ -109,7 +119,7 @@ class LattesScraper(webdriver.Firefox):
             self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             self.find_element(By.XPATH, "//div[@class='rodape-cv']")
 
-    def __results_next_page(self):
+    def _open_next_page(self):
         try:
             next_page_button = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
             next_page_button.click()
@@ -117,18 +127,18 @@ class LattesScraper(webdriver.Firefox):
         except NoSuchElementException:
             return False
 
-    def __get_curriculum(self, result):
-        WebDriverWait(self, 10).until(modal(result))
+    def _open_curriculum(self):
+        WebDriverWait(self, 10).until(modal(self.current_result))
         WebDriverWait(self, 10).until(abreCV())
         WebDriverWait(self, 50).until(tabs(more_than=1))
         self.switch_to.window(self.window_handles[1])
 
         self.__wait_load_curriculum()
 
-    def __wait_page_change(self, previous_page_number):
+    def _wait_page_change(self, previous_page_number):
         for _ in range(3):
             current_page = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a").text
-            if current_page == 'próximo':
+            if current_page == 'próximo': # o próxima página, quando estamos na página 20, é nomeada "próximo"
                 return previous_page_number + 1
             else:
                 current_page_number = int(current_page)
@@ -138,56 +148,45 @@ class LattesScraper(webdriver.Firefox):
                     return current_page_number
         raise TimeoutError
 
-    def __get_results(self, max_results=10):
-        next_page = True
-        missing_results = max_results
+    def _save_curriculum(self, curriculum_result_hash_code):
+        self.backup.item[curriculum_result_hash_code] = self.page_source
+
+    def _close_curriculum(self):
+        self.close()
+        WebDriverWait(self, timeout=50).until(tabs(equals=1))
+        self.switch_to.window(self.window_handles[0])
+        self.execute_script("""document.querySelector("a.bt-fechar").click()""")
+
+    def _get_search_results(self, max_results=10):
         results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
-        stored_results = len(self.backup.item)
-        current_page = 0
+        self._set_progress_bar(total=min(max_results, results_found))
 
-        if self.show_progress: progress_bar = tqdm(total=min(max_results, results_found))
+        stored_results = lambda: len(self.backup.item)
+        get_page_results = lambda: self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
 
-        results_count = lambda: len(self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li"))
-        results = lambda: self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
-        hash = lambda text: hashlib.md5(text.encode()).hexdigest()
+        there_is_next_page = True
+        current_page_number = 0
+        while there_is_next_page and stored_results() < max_results:
+            missing_results = max_results - stored_results()
+            page_results = get_page_results()
+            results_to_get_on_page = min(len(page_results), missing_results)
 
-        while next_page and stored_results < max_results:
-            missing_results = max_results - stored_results
+            for i in range(results_to_get_on_page):
+                self.current_result = page_results[i]
+                result_text = self.current_result.text.strip()
+                result_hash_code = hash(result_text)
 
-            for i in range(min(results_count(), missing_results)):
-                result = results()[i]
-                result_infos = result.text.strip()
-                self.current_result = result_infos
-                hash_code = hash(result_infos)
-
-                if self.backup.item.get(hash_code):
-                    if self.show_progress:
-                        progress_bar.update(1)
-                        progress_bar.refresh()
-                    continue
-
-                self.__get_curriculum(result)
-
-                lattes_url = self.find_element(By.XPATH, "//ul[@class='informacoes-autor']/li").text.split('CV: ')[-1]
-                lattes_id = lattes_url.split('/')[-1]
-
-                self.backup.item[hash_code] = self.page_source
-                stored_results += 1
-
-                if self.show_progress:
-                    progress_bar.update(1)
-                    progress_bar.refresh()
-
-                # Fecha aba e volta para os resultados
-                self.close()
-                WebDriverWait(self, timeout=50).until(tabs(equals=1))
-                self.switch_to.window(self.window_handles[0])
-                self.execute_script("""document.querySelector("a.bt-fechar").click()""")
-
-                time.sleep(self.sleep)
+                if not self.backup.item.get(result_hash_code):
+                    self._open_curriculum()
+                    self._save_curriculum(result_hash_code)
+                    self._close_curriculum()
+                    time.sleep(self.sleep)
+                self._update_progress_bar(by=1)
                 self.current_result = None
-            next_page = self.__results_next_page()
-            if next_page: current_page = self.__wait_page_change(current_page)
+            
+            there_is_next_page = self._open_next_page()
+            if there_is_next_page:
+                current_page_number = self._wait_page_change(previous_page_number=current_page_number)
 
     def __set_professional_activity_areas(self, grande_area, area=None, subarea=None, especialidade=None):
         self.find_element(By.ID, 'filtro4').click()
