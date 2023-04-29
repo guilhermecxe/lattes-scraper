@@ -73,31 +73,34 @@ class LattesScraper(webdriver.Firefox):
         fill_list(filters, {}, searches)
         fill_list(preferences, {}, searches)
 
+        self._set_progress_bar(total=searches)
         self.__get_search_page()
         for i in range(searches):
             self.__apply_filters(filters[i])
             self.__apply_preferences(preferences[i])
             self.__click_search()
-            self.__handle_get_results(max_results)
+            self.show_progress = False
+            self._handle_get_search_results(max_results)
+            self.show_progress = True
             self.__click_back_to_search()
+            self._update_progress_bar()
 
     def search(self, max_results=10, filters={}, preferences={}):
         self.__get_search_page()
         self.__apply_filters(filters)
         self.__apply_preferences(preferences)
         self.__click_search()
-        self.__handle_get_results(max_results)
+        self._handle_get_search_results(max_results)
 
-    def __handle_get_results(self, max_results):
+    def _handle_get_search_results(self, max_results):
         try:
             self._get_search_results(max_results=max_results)
-            return self.backup.item
         except:
-            current_result_text = self.current_result.text.strip()
+            current_result_text = self.current_result.text.strip() if self.current_result else ''
             if current_result_text == 'Stale file handle':
                 print('Error. The plataform is not working well. Try again after some time.')
             else:
-                print(f'An error occurred while getting the results. {len(self.backup.item)} results obtained.')
+                print(f'An error occurred while getting results. {len(self.backup.item)} results obtained.')
                 print('Use .save_results method to save them.')
                 if current_result_text:
                     print('Error while on result defined as:\n---')
