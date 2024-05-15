@@ -1,1 +1,1 @@
-from .lattes_scraper import LattesScraper
+from .lattes_scraper import LattesDriver

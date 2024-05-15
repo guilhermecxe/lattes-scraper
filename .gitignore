@@ -4,3 +4,5 @@ geckodriver.log
 *.egg-info
 data
 .backup
+cvs
+*_venv

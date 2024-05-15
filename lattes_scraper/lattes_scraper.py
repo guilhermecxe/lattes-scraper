@@ -1,238 +1,260 @@
+from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
-from selenium import webdriver
 from selenium.webdriver.support.wait import WebDriverWait
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
 from shutil import which
-from tqdm import tqdm
 import os
 import time
 
 from .expected_conditions import abreCV, tabs, modal
-from .backup import Backup, save_backup, read_backup
-from .utils import fill_list, hash
 
-class LattesScraper(webdriver.Firefox):
-    def __init__(self, teardown=True, headless=True, show_progress=False, backup_id=None, backup_name=None,
-                 sleep=0):
+class LattesDriver(webdriver.Firefox):
+    '''
+    Responsável por operar o driver que realiza a busca por currículos.
+    '''
+    def __init__(self, configurations, teardown=True, headless=True):
+        self.configurations = configurations
         self.teardown = teardown
-        self.show_progress = show_progress
-        self.current_result = None
-        self.previous_page_number = 0
-        self.sleep = sleep
-        self.backup = read_backup(backup_id) if backup_id else Backup({}, backup_name)
-        self.progress_bar = None
+        self.headless = headless
 
         options = Options()
-        service = Service(self.__get_geckodriver_path())
-        options.headless = headless
+        options.headless = self.headless
+
+        service = Service(self.get_geckodriver_path())
 
         super().__init__(options=options, service=service)
 
-        self.implicitly_wait(15)
+        self.implicitly_wait(30)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.teardown:
             self.quit()
 
-    def __get_geckodriver_path(self):
+    def get_geckodriver_path(self):
         geckodriver_path = which('geckodriver')
         if not geckodriver_path:
             geckodriver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'geckodriver.exe')
         return geckodriver_path
-    
-    def _set_progress_bar(self, total):
-        if self.show_progress:
-            self._progress_bar = tqdm(total=total)
 
-    def _update_progress_bar(self, by=1):
-        if self.show_progress:
-            self._progress_bar.update(by)
-            self._progress_bar.refresh()
+    def search(self):
+        s = Search(self, self.configurations)
+        s.execute()
 
-    def __get_search_page(self):
-        for i in range(3):
-            try:
-                self.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
-            except WebDriverException:
-                if i == 2:
-                    print('Error trying to access website. Check if it is working.')
-                    raise
-                time.sleep(5)
+class Search:
+    '''
+    Responsável por coordenador a pesquisa. Isto inclui delegar a aplicação de filtros e preferências
+    e obter os resultados da busca.
+    '''
+    def __init__(self, driver, configurations):
+        self.driver = driver
+        self.configurations = configurations
 
-    def __click_search(self):
-        self.find_element(By.ID, 'botaoBuscaFiltros').click()
+    def execute(self):
+        filters = Filters(self.driver, self.configurations)
+        preferences = Preferences(self.driver, self.configurations)
+        results = Results(self.driver, self.configurations)
 
-    def __click_back_to_search(self):
-        self.find_element(By.CSS_SELECTOR, "#tit2_simples .button").click()
+        self.get_search_page()
+        filters.apply()
+        preferences.apply()
+        self.search()
+        results.get_results()
 
-    def multiple_searches(self, max_results=10, filters=[], preferences=[]):
-        searches = max(len(filters), len(preferences))
-        fill_list(filters, {}, searches)
-        fill_list(preferences, {}, searches)
+        time.sleep(5)
 
-        self._set_progress_bar(total=searches)
-        self.__get_search_page()
-        for i in range(searches):
-            self.__apply_filters(filters[i])
-            self.__apply_preferences(preferences[i])
-            self.__click_search()
-            self.show_progress = False
-            self._handle_get_search_results(max_results)
-            self.show_progress = True
-            self.__click_back_to_search()
-            self._update_progress_bar()
+    def get_search_page(self):
+        self.driver.get('https://buscatextual.cnpq.br/buscatextual/busca.do')
 
-    def search(self, max_results=10, filters={}, preferences={}):
-        self.__get_search_page()
-        self.__apply_filters(filters)
-        self.__apply_preferences(preferences)
-        self.__click_search()
-        self._handle_get_search_results(max_results)
+    def search(self):
+        self.driver.find_element(By.ID, 'botaoBuscaFiltros').click()
 
-    def _handle_get_search_results(self, max_results):
+class Filters:
+    '''
+    Responsável por aplicar os filtros escolhidos pelo usuário.
+
+    Filtros disponíveis:
+        mode: "Nome" ou "Assunto"
+        foreigners: True ou False
+        productivity_scholarship: ["1A", "1B", "1C", "1D", "2"]
+        professional_activity_areas: {"grande_area": ..., "area": ..., "subarea": ..., "especialidade": ...}
+        professional_activity_uf: Todas, Acre, Alagoas, ..., Sergipe ou Tocantins
+        text: <str>
+    '''
+    def __init__(self, driver, configurations):
+        self.driver = driver
+        self.configurations = configurations
+
+    def apply(self):
+        self.set_mode()
+        self.set_foreigners()
+        self.set_productivity_scholarship()
+        self.set_professional_activity_areas()
+        self.set_professional_activity_uf()
+        self.set_text()
+
+    def set_mode(self):
+        if self.configurations.get('mode') == 'Assunto':
+            self.driver.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
+
+    def set_text(self):
+        text = self.configurations.get('text')
+        if text:
+            text_input = self.driver.find_element(By.XPATH, "//input[@id = 'textoBusca']")
+            text_input.send_keys(text)
+
+    def set_foreigners(self):
+        if not self.configurations.get('foreigners'):
+            self.driver.find_element(By.ID, 'buscarEstrangeiros').click()
+
+    def set_productivity_scholarship(self):
+        self.driver.find_element(By.ID, 'filtro0').click()
+        for scholarship in self.configurations.get('productivity_scholarship', []):
+            self.driver.find_element(By.XPATH, f"//input[@id = 'checkbox{scholarship}']").click()
+        self.driver.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[0].click()
+
+    def set_professional_activity_areas(self):
+        grande_area = self.configurations.get('professional_activity_area', {}).get('grande_area')
+        area = self.configurations.get('professional_activity_area', {}).get('area')
+        subarea = self.configurations.get('professional_activity_area', {}).get('subarea')
+        especialidade = self.configurations.get('professional_activity_area', {}).get('especialidade')
+
+        if grande_area:
+            self.driver.find_element(By.ID, 'filtro4').click()
+            self.driver.find_element(By.XPATH, f"//option[text()='{grande_area}']").click()
+
+            if area:
+                self.driver.find_element(By.XPATH, f"//option[text()='{area}']").click()
+                if subarea:
+                    self.driver.find_element(By.XPATH, f"//option[text()='{subarea}']").click()
+                    if especialidade:
+                        self.driver.find_element(By.XPATH, f"//option[text()='{especialidade}']").click()
+
+            self.driver.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[4].click()
+
+    def set_professional_activity_uf(self):
+        professional_activity_uf = self.configurations.get('professional_activity_uf')
+        if professional_activity_uf:
+            self.driver.find_element(By.ID, 'filtro8').click()
+            self.driver.find_elements(By.XPATH, f"//option[contains(text(), '{professional_activity_uf}')]")[-1].click()
+            self.driver.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
+
+class Preferences:
+    '''
+    Responsável por aplicar as preferências escolhidas pelo usuário.
+
+    Preferências disponíveis:
+        last_update: <int>
+    '''
+    def __init__(self, driver, configurations):
+        self.driver = driver
+        self.configurations = configurations
+
+    def apply(self):
+        self.driver.find_element(By.XPATH, "//a[text()=' Preferências ']").click()
+
+        self.set_last_update()
+
+    def set_last_update(self):
+        last_update = self.configurations.get('last_update')
+        if last_update:
+            self.driver.find_element(By.ID, 'somenteAtualizados').clear()
+            self.driver.find_element(By.ID, 'somenteAtualizados').send_keys(last_update)
+
+class Results:
+    """
+    Responsável por acessar e salvar os currículos retornados na busca feita pela classe `Search`.
+    """
+    def __init__(self, driver, configurations):
+        self.driver = driver
+        self.configurations = configurations
+        
+        self.bd = TxtSaving(self.configurations.get('txt_saving', {}).get('folder'))
+
+    def get_results(self):
+        there_is_next_page = True
+        current_page = 1
+        while there_is_next_page:
+            page_results = self.get_page_results()
+
+            for result in page_results:
+                id = self.get_result_id(result)
+                if not self.bd.saved(id):
+                    self.open_cv(result)
+                    self.save_cv(id)
+                    self.close_cv()
+            there_is_next_page = self.next_page()
+            if there_is_next_page:
+                current_page = self.wait_load_next_page(previous_page=current_page)
+
+    def get_result_id(self, result):
+        href = result.find_element(By.TAG_NAME, 'a').get_attribute('href')
+        return href.strip("javascript:abreDetalhe('").split("'")[0]
+
+    def get_page_results(self):
+        return self.driver.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
+
+    def open_cv(self, result):
+        WebDriverWait(self.driver, 10).until(modal(result))
+        WebDriverWait(self.driver, 10).until(abreCV())
+        WebDriverWait(self.driver, 50).until(tabs(more_than=1))
+        self.driver.switch_to.window(self.driver.window_handles[1])
+        self.wait_load_cv()
+
+    def save_cv(self, id):
+        self.bd.save(id, self.driver.page_source)
+
+    def close_cv(self):
+        self.driver.close()
+        WebDriverWait(self.driver, timeout=50).until(tabs(equals=1))
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        self.driver.execute_script("""document.querySelector("a.bt-fechar").click()""")
+
+    def wait_load_cv(self):
         try:
-            self._get_search_results(max_results=max_results)
-        except:
-            current_result_text = self.current_result.text.strip() if self.current_result else ''
-            if current_result_text == 'Stale file handle':
-                print('Error. The plataform is not working well. Try again after some time.')
-            else:
-                print(f'An error occurred while getting results. {len(self.backup.item)} results obtained.')
-                print('Use .save_results method to save them.')
-                if current_result_text:
-                    print('Error while on result defined as:\n---')
-                    print(current_result_text)
-                    print('---')
-            raise
-        finally:
-            if self.backup.id:
-                id = save_backup(self.backup)
-                print(f'A backup with id {id} was updated.')
-            elif self.backup.item:
-                id = save_backup(self.backup)
-                print(f'A backup was created with id {id}.')
-
-    def __wait_load_curriculum(self):
-        try:
-            self.find_element(By.XPATH, "//div[@class='rodape-cv']")
+            self.driver.find_element(By.XPATH, "//div[@class='rodape-cv']")
         except NoSuchElementException:
-            self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            self.find_element(By.XPATH, "//div[@class='rodape-cv']")
-
-    def _open_next_page(self):
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self.driver.find_element(By.XPATH, "//div[@class='rodape-cv']")
+    
+    def next_page(self):
         try:
-            next_page_button = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
+            next_page_button = self.driver.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a")
             next_page_button.click()
             return True
         except NoSuchElementException:
             return False
-
-    def _open_curriculum(self):
-        WebDriverWait(self, 10).until(modal(self.current_result))
-        WebDriverWait(self, 10).until(abreCV())
-        WebDriverWait(self, 50).until(tabs(more_than=1))
-        self.switch_to.window(self.window_handles[1])
-
-        self.__wait_load_curriculum()
-
-    def _wait_page_change(self, previous_page_number):
+    
+    def wait_load_next_page(self, previous_page:int):
         for _ in range(3):
-            current_page = self.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*/following-sibling::a").text
-            if current_page == 'próximo': # o próxima página, quando estamos na página 20, é nomeada "próximo"
-                return previous_page_number + 1
-            else:
-                current_page_number = int(current_page)
-                if current_page_number == previous_page_number:
-                    time.sleep(self.sleep)
-                else:
-                    return current_page_number
-        raise TimeoutError
-
-    def _save_curriculum(self, curriculum_result_hash_code):
-        self.backup.item[curriculum_result_hash_code] = self.page_source
-
-    def _close_curriculum(self):
-        self.close()
-        WebDriverWait(self, timeout=50).until(tabs(equals=1))
-        self.switch_to.window(self.window_handles[0])
-        self.execute_script("""document.querySelector("a.bt-fechar").click()""")
-
-    def _get_search_results(self, max_results=10):
-        results_found = int(self.find_element(By.XPATH, "//div[@class='tit_form']/b").text)
-        self._set_progress_bar(total=min(max_results, results_found))
-
-        stored_results = lambda: len(self.backup.item)
-        get_page_results = lambda: self.find_elements(By.XPATH, "//div[@class = 'resultado']/ol/li")
-
-        there_is_next_page = True
-        current_page_number = 0
-        while there_is_next_page and stored_results() < max_results:
-            missing_results = max_results - stored_results()
-            page_results = get_page_results()
-            results_to_get_on_page = min(len(page_results), missing_results)
-
-            for i in range(results_to_get_on_page):
-                self.current_result = page_results[i]
-                result_text = self.current_result.text.strip()
-                result_hash_code = hash(result_text)
-
-                if not self.backup.item.get(result_hash_code):
-                    self._open_curriculum()
-                    self._save_curriculum(result_hash_code)
-                    self._close_curriculum()
-                    time.sleep(self.sleep)
-                self._update_progress_bar(by=1)
-                self.current_result = None
-            
-            there_is_next_page = self._open_next_page()
-            if there_is_next_page:
-                current_page_number = self._wait_page_change(previous_page_number=current_page_number)
-
-    def __set_professional_activity_areas(self, grande_area, area=None, subarea=None, especialidade=None):
-        self.find_element(By.ID, 'filtro4').click()
-        for i in range(3):
             try:
-                self.find_element(By.XPATH, f"//option[text()='{grande_area}']").click()
-                if area: self.find_element(By.XPATH, f"//option[text()='{area}']").click()
-                if subarea: self.find_element(By.XPATH, f"//option[text()='{subarea}']").click()
-                if especialidade: self.find_element(By.XPATH, f"//option[text()='{especialidade}']").click()
-                break
+                current_page = int(self.driver.find_element(By.XPATH, "//font[@color='#ff0000']/parent::*").text)
             except NoSuchElementException:
-                time.sleep(2)
-        self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[4].click()
+                raise RuntimeError('Apesar do site indicar a existência de uma próxima página, ele não exibe os resultados desta.')
+            
+            if current_page == previous_page:
+                time.sleep(self.configurations.get('sleep', 5))
+            else:
+                return current_page
+        raise TimeoutError
+    
+class TxtSaving:
+    def __init__(self, folder):
+        self.folder = folder
+        if self.folder:
+            file_names = filter(lambda file_name: file_name.endswith('.txt'), os.listdir(folder))
+            ids = map(lambda file_name: file_name.strip('.txt'), file_names)
+            self.ids = list(ids)
+        else:
+            self.ids = []
 
-    def save_results(self, folder_path, results=None):
-        results = results if results else self.backup.item
-        for k, v in results.items():
-            with open(os.path.join(folder_path, f'{k}.html'), 'w', encoding='utf-8') as f:
-                f.write(v)
-
-    def __apply_preferences(self, preferences):
-        last_update = preferences.get('last_update', 48)
-        self.find_element(By.XPATH, "//a[text()=' Preferências ']").click()
-
-        if last_update != 48:
-            self.find_element(By.ID, 'somenteAtualizados').clear()
-            self.find_element(By.ID, 'somenteAtualizados').send_keys(last_update)
-
-    def __apply_filters(self, filters):
-        areas = filters.get('areas')
-        professional_activity_uf = filters.get('professional_activity_uf')
-        text = filters.get('text')
-        text_input = self.find_element(By.XPATH, "//input[@id = 'textoBusca']")
-
-        if filters.get('mode') == 'Assunto':
-            self.find_element(By.XPATH, "//input[@id = 'buscaAssunto']").click()
-        if not filters.get('foreigner'):
-            self.find_element(By.ID, 'buscarEstrangeiros').click()
-        if areas:
-            self.__set_professional_activity_areas(*areas)
-        if professional_activity_uf:
-            self.find_element(By.ID, 'filtro8').click()
-            self.find_elements(By.XPATH, f"//option[contains(text(), '{professional_activity_uf}')]")[-1].click()
-            self.find_elements(By.ID, 'preencheCategoriaNivelBolsa')[8].click()
-        if text:
-            text_input.send_keys(text)
+    def saved(self, id):
+        if id in self.ids:
+            return True
+        return False
+    
+    def save(self, id, soup):
+        if self.folder:
+            with open(os.path.join(self.folder, id + '.txt'), 'w', encoding='utf-8') as f:
+                f.write(str(soup))
