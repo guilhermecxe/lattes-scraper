@@ -1,13 +1,13 @@
 # Lattes Scraper
 
-Este é um pacote que realiza buscas na plataforma Currículo Lattes e extrai arquivos html referentes ao currículos encontrados.
+Este é um pacote que realiza buscas na plataforma Currículo Lattes e extrai arquivos HTMLs referentes ao currículos encontrados.
 
-## Requirements:
+## Requisitos:
 
 - `Python==3.9` or `Python==3.10`
 - `selenium==4.8.3`
 
-## Install
+## Instalação
 
 Clone:
 ```bash
@@ -15,48 +15,31 @@ $ git clone https://github.com/guilhermecxe/lattes-scraper.git
 $ cd lattes-scraper
 ```
 
-Run:
+Execute:
 ```bash
 $ pip install -e .
 ```
 
-## Example
+## Exemplo
 
-Run:
+Execute o código abaixo para salvar, na pasta `cvs`, os currículos encontrados pela busca:
 ```py
-from lattes_scraper import LattesScraper
+from lattes_scraper import LattesDriver
 
-filters = {
-    'mode': 'Nome',
-    'text': '',
-    'foreigner': False,
-    'areas': ('Ciências Humanas', 'Ciência Política'),
-    'professional_activity_uf': 'Goiás',
-}
-
-preferences = {
+configurations = {
     'last_update': 12,
+    'foreigners': False,
+    'productivity_scholarship': ['1A'],
+    'professional_activity_area': {
+        'grande_area': 'Ciências Exatas e da Terra',
+        'area': 'Ciência da Computação',
+        'subarea': 'Metodologia e Técnicas da Computação',
+        'especialidade': 'Engenharia de Software',
+    },
+    'txt_saving': {
+        'folder': 'cvs/'
+    },
 }
 
-max_results = 15
-backup_name = 'Example'
-backup_id = None
-sleep = 2
-
-# Um backup é criado sempre que um erro ocorre ou a busca termina
-with LattesScraper(teardown=True, headless=True, show_progress=False,
-                   backup_name=backup_name, backup_id=backup_id) as scraper:
-    scraper.implicitly_wait(30)
-    scraper.search(max_results, filters, preferences)
-
-# Para obter o id do backup criado ou atualizado:
-print(scraper.backup.id)
-
-# Para obter um dicionário dos arquivos html salvos:
-print(scraper.backup.item)
-
-# Para salvar os arquivos html em uma pasta: 
-scraper.save_results('data/')
-
-
-```
+with LattesDriver(configurations, headless=False) as scraper:
+    scraper.search()
